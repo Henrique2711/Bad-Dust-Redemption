@@ -12,7 +12,7 @@ Jogo de tiro ao alvo no faroeste, feito com HTML, CSS e JavaScript puro. Funcion
 
 ## Jogar online
 
-Depois de ativar o GitHub Pages: `https://SEU-USUARIO.github.io/NOME-DO-REPOSITORIO/`
+Depois de ativar o GitHub Pages: `https://henrique2711.github.io/Bad-Dust-Redemption/`
 
 ## Rodar no computador
 
