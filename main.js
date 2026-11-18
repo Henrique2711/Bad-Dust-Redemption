@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { init as initExtras } from './extras.js';
 
 const $ = id => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -8,11 +9,13 @@ const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t
 // ---------- mundo ----------
 const LAKES = [{ x: 80, z: -60, r: 22 }, { x: -90, z: 70, r: 25 }, { x: -60, z: -110, r: 20 }];
 const WATER = -0.8, LIM = 185;
+const MINE = { x: 110, z: -110 };
 
 function height(x, z) {
   let b = (Math.sin(x * 0.03) * Math.cos(z * 0.025) * 4 + Math.sin(x * 0.011 + z * 0.017) * 6 +
            Math.cos(z * 0.05) * Math.sin(x * 0.04) * 1.5) * 0.5 + 3;
   b = Math.max(b, 0.5) * smooth(35, 70, Math.hypot(x, z));
+  { const f = smooth(40, 18, Math.hypot(x - MINE.x, z - MINE.z)); b = b * (1 - f) + f; }
   for (const l of LAKES) {
     const f = smooth(l.r * 1.3, l.r * 0.6, Math.hypot(x - l.x, z - l.z));
     b = b * (1 - f) - 2.5 * f;
@@ -191,9 +194,11 @@ function populate() {
 populate();
 
 // ---------- estado ----------
-let tod = 0.18, sunY = 1, night = false, locked = false;
+Object.assign(player, { money: 0, bag: {}, weapon: 'none', pick: 0, moving: false });
+let tod = 0.18, sunY = 1, night = false;
 let kick = 0, hurtFlash = 0, toastT = 0;
 const keys = {};
+const dir = new THREE.Vector3(), tmp = new THREE.Vector3();
 
 function toast(t) {
   const el = $('aviso'); el.textContent = t; el.style.opacity = 1;
@@ -201,30 +206,16 @@ function toast(t) {
 }
 function hurt(n) {
   if (player.hp <= 0) return;
-  player.hp = Math.max(0, player.hp - n); hurtFlash = 0.35;
-  if (player.hp <= 0) {
-    document.exitPointerLock();
-    setScreen('Você morreu', 'Clique para tentar de novo');
-  }
+  player.hp = Math.max(0, player.hp - n); hurtFlash = 0.35; X.thud();
+  if (player.hp <= 0) X.die();
 }
-function setScreen(t, s) { $('titulo').textContent = t; $('sub').textContent = s; $('tela').style.display = 'flex'; }
 function respawn() {
   Object.assign(player, { x: 0, z: 3, hp: 100, ammo: 6, reload: 0, mounted: false });
   H.x = 12; H.z = 2; populate();
 }
-
-function startReload() { if (player.reload <= 0 && player.ammo < 6) player.reload = 1.3; }
-function toggleHorse() {
-  if (player.hp <= 0) return;
-  if (player.mounted) { player.mounted = false; player.x += 2; }
-  else if (Math.hypot(player.x - H.x, player.z - H.z) < 5) { player.mounted = true; toast('Montado no cavalo'); }
-}
-
-const dir = new THREE.Vector3(), tmp = new THREE.Vector3();
-function shoot() {
-  if (player.hp <= 0 || player.reload > 0) return;
-  if (player.ammo <= 0) { startReload(); return; }
-  player.ammo--; kick = 0.05;
+const PAY = { buffalo: 40, gator: 90, coyote: 15 };
+function fireRay() {
+  kick = 0.05;
   camera.getWorldDirection(dir);
   let best = null;
   for (const a of animals) {
@@ -236,33 +227,21 @@ function shoot() {
   }
   if (!best) return;
   const a = best.a; a.hp--;
-  if (a.hp <= 0) { a.dead = 0.001; player.score[a.type]++; toast('Abateu um ' + a.cfg.name); }
+  if (a.hp <= 0) { a.dead = 0.001; player.score[a.type]++; player.money += PAY[a.type]; toast('Abateu um ' + a.cfg.name + ' +$' + PAY[a.type]); }
   else { a.scared = 6; toast('Acertou!'); }
 }
 
 // ---------- entrada ----------
-addEventListener('keydown', e => {
-  keys[e.code] = true;
-  if (!locked) return;
-  if (e.code === 'KeyR') startReload();
-  if (e.code === 'KeyE') toggleHorse();
-});
-addEventListener('keyup', e => { keys[e.code] = false; });
+const X = initExtras({ THREE, scene, camera, renderer, player, pm, H, height, box, M, rects, toast, MINE, WATER,
+                       fireRay, respawn, getTod: () => tod });
+addEventListener('keydown', e => { keys[e.code] = true; X.key(e); });
+addEventListener('keyup', e => { keys[e.code] = false; X.keyup(e); });
 addEventListener('mousemove', e => {
-  if (!locked) return;
+  if (!X.locked || X.move(e)) return;
   player.yaw -= e.movementX * 0.0025;
   player.pitch = clamp(player.pitch + e.movementY * 0.0025, -0.2, 1.1);
 });
-addEventListener('mousedown', e => { if (locked && e.button === 0) shoot(); });
-$('tela').addEventListener('click', () => {
-  if (player.hp <= 0) respawn();
-  renderer.domElement.requestPointerLock();
-});
-document.addEventListener('pointerlockchange', () => {
-  locked = document.pointerLockElement === renderer.domElement;
-  if (locked) $('tela').style.display = 'none';
-  else if (player.hp > 0) setScreen('Pausado', 'Clique para continuar');
-});
+addEventListener('mousedown', e => { if (X.locked && e.button === 0) X.click(); });
 
 // ---------- atualização ----------
 function updateAnimal(a, dt) {
@@ -308,7 +287,7 @@ function updateAnimal(a, dt) {
 
 const cDay = new THREE.Color('#8cc0e8'), cDusk = new THREE.Color('#e8773a'), cNight = new THREE.Color('#0a0f2a');
 function updateSky(dt) {
-  tod = (tod + dt / 300) % 1;
+  tod = (tod + dt / (X.dayMin * 60)) % 1;
   const ang = tod * Math.PI * 2; sunY = Math.sin(ang); night = sunY < 0.05;
   if (sunY > 0.25) skyCol.copy(cDay);
   else if (sunY > 0) skyCol.lerpColors(cDusk, cDay, sunY / 0.25);
@@ -322,6 +301,7 @@ function updateSky(dt) {
 }
 
 function update(dt) {
+  X.update(dt);
   updateSky(dt);
   const p = player;
   if (p.hp > 0) {
@@ -341,6 +321,8 @@ function update(dt) {
       if (!blocked(p.x, nz) && !wet) p.z = nz;
       p.face = Math.atan2(vz, vx);
     }
+    if (p.weapon !== 'none' && !p.mounted) p.face = Math.atan2(-Math.cos(p.yaw), -Math.sin(p.yaw));
+    p.moving = moving;
     p.y = Math.max(height(p.x, p.z), WATER - 1.2);
     pm.position.set(p.x, p.y + (p.mounted ? 1.3 : (moving ? Math.abs(Math.sin(performance.now() / 120)) * 0.08 : 0)), p.z);
     pm.rotation.y = Math.PI / 2 - p.face;
@@ -364,16 +346,13 @@ function update(dt) {
   hurtFlash = Math.max(0, hurtFlash - dt);
   $('dano').style.opacity = hurtFlash * 1.2;
   $('barra').firstChild.style.width = p.hp + '%';
-  $('bala').textContent = p.reload > 0 ? 'Recarregando...' : 'Balas: ' + p.ammo + ' / 6' + (p.ammo === 0 ? ' (aperte R)' : '');
-  const hr = (tod * 24 + 6) % 24;
-  $('hora').textContent = String(Math.floor(hr)).padStart(2, '0') + ':' + String(Math.floor((hr % 1) * 60)).padStart(2, '0');
-  $('caca').innerHTML = 'Búfalos: ' + p.score.buffalo + '<br>Jacarés: ' + p.score.gator + '<br>Coiotes: ' + p.score.coyote;
+  X.hud();
 }
 
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (locked) update(dt);
+  if (X.locked) update(dt * X.timeScale);
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }

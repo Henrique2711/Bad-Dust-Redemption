@@ -12,32 +12,63 @@
   #vida { top: 14px; left: 14px; }
   #barra { width: 200px; height: 14px; background: #3a2416; border: 2px solid #1e120c; }
   #barra i { display: block; height: 100%; width: 100%; background: #b3321f; }
+  #din { top: 58px; left: 14px; color: #f4c430; font-size: 22px; }
   #hora { top: 14px; right: 14px; }
+  #mm { position: fixed; top: 46px; right: 14px; width: 150px; height: 150px; border: 3px solid #1e120c; border-radius: 4px; }
   #bala { bottom: 14px; left: 14px; }
   #caca { bottom: 14px; right: 14px; text-align: right; line-height: 1.5; }
+  #dica { bottom: 70px; left: 0; right: 0; text-align: center; }
   #mira { top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border: 2px solid #f1d9a8; border-radius: 50%; }
   #aviso { top: 18%; left: 0; right: 0; text-align: center; font-size: 22px; opacity: 0; transition: opacity .3s; }
   #dano { inset: 0; background: #b3321f; opacity: 0; }
-  #tela { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-          background: rgba(30, 18, 12, .86); text-align: center; cursor: pointer; padding: 20px; }
-  #tela h1 { margin: 0 0 12px; font-size: clamp(1.8rem, 6vw, 3rem); color: #d98a3d; text-shadow: 3px 3px 0 #b3321f; }
-  #tela p { margin: 4px 0; max-width: 46ch; line-height: 1.5; }
+  #tela { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+          background: rgba(30, 18, 12, .88); text-align: center; padding: 16px; overflow: auto; }
+  #tela h1 { margin: 0 0 10px; font-size: clamp(1.8rem, 6vw, 2.8rem); color: #d98a3d; text-shadow: 3px 3px 0 #b3321f; }
+  #tela p { margin: 3px 0; max-width: 50ch; line-height: 1.4; }
+  label { display: grid; grid-template-columns: 150px 180px 40px; gap: 8px; align-items: center; margin: 5px 0; text-align: left; }
+  button { font: inherit; font-weight: 700; padding: 10px 22px; margin: 6px; color: #1e120c; background: #d98a3d;
+           border: 3px solid #3a2416; border-radius: 4px; cursor: pointer; }
+  button:hover:not(:disabled) { background: #f1d9a8; }
+  button:disabled { opacity: .45; cursor: default; }
+  select { font: inherit; }
+  #loja { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; min-width: 300px; text-align: center;
+          background: #2a1a10; border: 4px solid #3a2416; padding: 14px 24px; }
+  #loja h2 { margin: 0 0 8px; color: #d98a3d; } #loja button { display: block; width: 100%; }
+  #roda { position: fixed; top: 50%; left: 50%; width: 360px; height: 360px; margin: -180px 0 0 -180px; display: none; pointer-events: none; }
+  #roda div { position: absolute; width: 140px; padding: 14px 6px; text-align: center; background: rgba(30, 18, 12, .85);
+              border: 3px solid #3a2416; border-radius: 50%; }
+  #roda div.on { background: #d98a3d; color: #1e120c; }
+  #w0 { left: 110px; top: 0; } #w1 { right: 0; bottom: 20px; } #w2 { left: 0; bottom: 20px; }
+  #mapa { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(30, 18, 12, .8); }
+  #mapc { width: min(86vh, 90vw); height: min(86vh, 90vw); border: 4px solid #3a2416; }
 </style>
 </head>
 <body>
 <div id="vida" class="hud">Vida<div id="barra"><i></i></div></div>
+<div id="din" class="hud"></div>
 <div id="hora" class="hud"></div>
+<canvas id="mm" width="150" height="150"></canvas>
 <div id="bala" class="hud"></div>
 <div id="caca" class="hud"></div>
+<div id="dica" class="hud"></div>
 <div id="mira" class="hud"></div>
 <div id="aviso" class="hud"></div>
 <div id="dano" class="hud"></div>
+<div id="roda"><div id="w0"></div><div id="w1"></div><div id="w2"></div></div>
+<div id="mapa"><canvas id="mapc" width="600" height="600"></canvas></div>
+<div id="loja"></div>
 <div id="tela">
   <h1 id="titulo">Poeira Maldita: Mundo Aberto</h1>
-  <p id="sub">Clique para jogar</p>
-  <p>W A S D andar, Shift correr, mouse olhar, clique atirar</p>
-  <p>R recarregar, E montar ou descer do cavalo</p>
-  <p>Cuidado com os jacarés nos lagos e com os coiotes à noite. Joga no computador, com teclado e mouse.</p>
+  <button id="btn" type="button">Jogar</button>
+  <label>Volume geral <input id="s-master" type="range" min="0" max="100"><span></span></label>
+  <label>Música <input id="s-music" type="range" min="0" max="100"><span></span></label>
+  <label>Efeitos <input id="s-sfx" type="range" min="0" max="100"><span></span></label>
+  <label>Campo de visão <input id="s-fov" type="range" min="50" max="110"><span id="v-fov"></span></label>
+  <label>Dia (minutos) <input id="s-day" type="range" min="5" max="40"><span id="v-day"></span></label>
+  <label>Gráficos <select id="s-gfx"><option value="0">Baixo</option><option value="1">Médio</option><option value="2">Alto</option></select><span></span></label>
+  <p>WASD andar, Shift correr, clique atirar ou minerar, R recarregar</p>
+  <p>Segure Q: roda de armas (ou 1, 2, 3). E: montar no cavalo e abrir a loja. M: mapa</p>
+  <p>A mina fica no mapa. Pegue a picareta de graça na loja e venda os minérios lá. Joga no computador.</p>
 </div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module" src="main.js"></script>
