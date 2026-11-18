@@ -8,15 +8,15 @@ const ORES = [
   { n: 'Diamante', c: '#7be7ff', v: 450, hp: 14, w: 3 }];
 const PICKS = [null, { n: 'Picareta de madeira', price: 0, dmg: 1, cd: .8 }, { n: 'Picareta de ferro', price: 150, dmg: 2, cd: .6 },
   { n: 'Picareta de ouro', price: 600, dmg: 3, cd: .5 }, { n: 'Picareta de diamante', price: 2500, dmg: 5, cd: .4 }];
-const OPT = ['none', 'revolver', 'pick'];
+const OPT = ['none', 'revolver', 'rifle', 'pick'];
 
 export function init(c) {
-  const { THREE, scene, camera, renderer, player: p, pm, H, height, box, M, rects, toast, MINE, WATER, fireRay } = c;
+  const { THREE, scene, camera, renderer, player: p, pm, H, height, box, M, toast, MINE, WATER, fireRay, NPCS, TOWNS, RAIL, W } = c;
   const $ = id => document.getElementById(id);
   const X = { locked: false, timeScale: 1, panel: 'start', dayMin: 20, thud: A.thud };
   const S = { master: .8, music: .5, sfx: .8, fov: 70, day: 20, gfx: 1 };
   try { Object.assign(S, JSON.parse(localStorage.getItem('pdr3d-s'))); Object.assign(p, JSON.parse(localStorage.getItem('pdr3d-p'))); } catch (e) {}
-  const store = () => { try { localStorage.setItem('pdr3d-s', JSON.stringify(S)); localStorage.setItem('pdr3d-p', JSON.stringify({ money: p.money, bag: p.bag, pick: p.pick })); } catch (e) {} };
+  const store = () => { try { localStorage.setItem('pdr3d-s', JSON.stringify(S)); localStorage.setItem('pdr3d-p', JSON.stringify({ money: p.money, bag: p.bag, pick: p.pick, rifle: p.rifle })); } catch (e) {} };
   let rl = 0, cd = 0, swing = 0, flash = 0, wheelOn = false, mapOn = false, wx = 0, wy = 0, sel = 0, gal = 0;
   const bagVal = () => Object.entries(p.bag).reduce((s, [i, n]) => s + n * ORES[i].v, 0);
   const bagN = () => Object.values(p.bag).reduce((s, n) => s + n, 0);
@@ -54,86 +54,102 @@ export function init(c) {
     else { wheelOn = mapOn = false; $('roda').style.display = $('mapa').style.display = 'none'; X.timeScale = 1; if (X.panel === null && p.hp > 0) show('pause'); }
   });
 
-  // ----- loja -----
+  // ----- lojas (vendedores NPC) -----
+  let shopT = 'mina';
+  const SH = {
+    mina: { nome: 'Zeca, o Minerador', fala: 'Fala, forasteiro! Traz os minérios que eu pago bem. A primeira picareta é por minha conta.' },
+    arm: { nome: 'Dona Berta, Armeira', fala: 'Aqui só tem coisa boa. Cano longo, tiro certeiro.' },
+    bar: { nome: 'Tião, Barman', fala: 'Senta aí, forasteiro. Uma dose e você sai novo.' }
+  };
+  const btn = (a, t, off) => `<button data-a="${a}" ${off ? 'disabled' : ''}>${t}</button>`;
   function renderShop() {
-    const v = bagVal();
-    let h = `<h2>Loja da mina</h2><p>Dinheiro: $${p.money}</p><p>Mochila: ${ORES.map((o, i) => p.bag[i] ? p.bag[i] + 'x ' + o.n : '').filter(Boolean).join(', ') || 'vazia'}</p>`;
-    h += `<button data-a="sell" ${v ? '' : 'disabled'}>Vender tudo (+$${v})</button><hr>`;
-    PICKS.forEach((k, i) => {
-      if (!k) return;
-      const own = p.pick >= i, can = p.pick === i - 1 && p.money >= k.price;
-      h += `<button data-a="b${i}" ${own || !can ? 'disabled' : ''}>${k.n} ${own ? '(sua)' : k.price ? '$' + k.price : '(grátis)'}</button>`;
-    });
+    const s = SH[shopT], v = bagVal();
+    let h = `<div class="ret"></div><h2>${s.nome}</h2><p><i>“${s.fala}”</i></p><p>Dinheiro: $${p.money}</p>`;
+    if (shopT === 'mina') {
+      h += `<p>Mochila: ${ORES.map((o, i) => p.bag[i] ? p.bag[i] + 'x ' + o.n : '').filter(Boolean).join(', ') || 'vazia'}</p>` + btn('sell', `Vender tudo (+$${v})`, !v) + '<hr>';
+      PICKS.forEach((k, i) => {
+        if (!k) return;
+        const own = p.pick >= i, can = p.pick === i - 1 && p.money >= k.price;
+        h += btn('b' + i, `${k.n} ${own ? '(sua)' : k.price ? '$' + k.price : '(grátis)'}`, own || !can);
+      });
+    } else if (shopT === 'arm') h += btn('rifle', 'Rifle ' + (p.rifle ? '(seu)' : '$350'), p.rifle || p.money < 350);
+    else h += btn('heal', 'Curar toda a vida $20', p.hp >= 100 || p.money < 20);
     $('loja').innerHTML = h + '<hr><button data-a="x">Fechar</button>';
   }
   $('loja').onclick = e => {
     const a = e.target.dataset.a; if (!a) return;
     if (a === 'sell') { p.money += bagVal(); p.bag = {}; A.coin(); }
-    else if (a[0] === 'b') { const i = +a.slice(1); p.money -= PICKS[i].price; p.pick = i; A.coin(); toast(PICKS[i].n + ' comprada'); }
+    else if (a === 'rifle') { p.money -= 350; p.rifle = true; A.coin(); toast('Rifle comprado'); }
+    else if (a === 'heal') { p.money -= 20; p.hp = 100; A.coin(); }
+    else if (a[0] === 'b') { const i = +a.slice(1); p.money -= PICKS[i].price; p.pick = i; A.coin(); toast(PICKS[i].n + ' pronta'); }
     else { show(null); renderer.domElement.requestPointerLock(); setTimeout(() => { if (!X.locked && X.panel === null) show('pause'); }, 400); return; }
     store(); renderShop();
   };
 
-  // ----- mina: loja, entrada e minérios -----
-  const shop = new THREE.Group(), my = height(MINE.x, MINE.z);
-  box(9, 4, 7, '#7a4b2a', 0, 2, 0, shop); box(10, .6, 8, '#4a2c1a', 0, 4.3, 0, shop); box(4, 1.2, .3, '#b3321f', 0, 5.2, 3.6, shop);
-  shop.position.set(MINE.x, my, MINE.z); scene.add(shop); rects.push({ x: MINE.x, z: MINE.z, w: 10, d: 8 });
-  const ent = new THREE.Group();
-  box(.6, 4, .6, '#4a2c1a', -2, 2, 0, ent); box(.6, 4, .6, '#4a2c1a', 2, 2, 0, ent);
-  box(5, .6, .6, '#4a2c1a', 0, 4.2, 0, ent); box(3.4, 3.6, .5, '#050505', 0, 1.8, -.4, ent);
-  ent.position.set(MINE.x, height(MINE.x, MINE.z - 24), MINE.z - 24); scene.add(ent);
-  const pickOre = () => { let r = Math.random() * 98, i = 0; while (i < 6 && r > ORES[i].w) r -= ORES[i++].w; return i; };
-  const nodes = [];
-  for (let k = 0, t = 0; k < 40 && t < 200; t++) {
-    const a = rand(0, TAU), d = rand(11, 34), x = MINE.x + Math.cos(a) * d, z = MINE.z + Math.sin(a) * d, y = height(x, z);
-    if (y < WATER + 0.8) continue;
-    const ty = pickOre(), o = ORES[ty], g = new THREE.Group();
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.3), M('#6b6560')); rock.scale.y = .8; rock.position.y = .8; g.add(rock);
+  // ----- mina: minérios espalhados pelo túnel -----
+  const dir = new THREE.Vector3(), v = new THREE.Vector3(), nodes = []; let left = 0;
+  const pickOre = d => { let b = 0; for (let k = 0; k < 1 + Math.floor(d * 3); k++) { let r = Math.random() * 98, i = 0; while (i < 6 && r > ORES[i].w) r -= ORES[i++].w; b = Math.max(b, i); } return b; };
+  function mkNode(x, z, ty) {
+    const o = ORES[ty], g = new THREE.Group(), y = height(x, z);
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.1), M('#6b6560')); rock.scale.y = .8; rock.position.y = .7; g.add(rock);
     const mat = new THREE.MeshLambertMaterial({ color: o.c, emissive: o.c, emissiveIntensity: ty > 3 ? .5 : ty > 1 ? .15 : 0 });
     for (let j = 0; j < 4; j++) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(.45, .45, .45), mat), aa = j * 1.6 + rand(0, 1);
-      m.position.set(Math.cos(aa) * .95, .9 + rand(0, .5), Math.sin(aa) * .95); m.rotation.set(rand(0, 3), rand(0, 3), 0); g.add(m);
+      m.position.set(Math.cos(aa) * .8, .8 + rand(0, .5), Math.sin(aa) * .8); m.rotation.set(rand(0, 3), rand(0, 3), 0); g.add(m);
     }
     g.position.set(x, y, z); g.rotation.y = rand(0, 6); scene.add(g);
-    nodes.push({ g, ty, hp: o.hp, x, z, y, wait: 0 }); k++;
+    return { g, ty, hp: o.hp, x, z, y, alive: true };
   }
-  const dir = new THREE.Vector3(), v = new THREE.Vector3();
+  function layout() {                      // sorteia de novo onde ficam os minérios
+    nodes.forEach(n => scene.remove(n.g)); nodes.length = 0;
+    [...W.slots].sort(() => Math.random() - .5).slice(0, 22).forEach(s => nodes.push(mkNode(s.x + rand(-2, 2), s.z + rand(-2, 2), pickOre(s.d))));
+    left = nodes.length;
+  }
+  layout();
   function mine() {
     if (cd > 0) return; const pk = PICKS[p.pick]; cd = pk.cd; swing = .3;
     camera.getWorldDirection(dir); let best = null;
     for (const n of nodes) {
-      if (n.wait > 0 || Math.hypot(n.x - p.x, n.z - p.z) > 5) continue;
+      if (!n.alive || Math.hypot(n.x - p.x, n.z - p.z) > 5) continue;
       v.set(n.x, n.y + .8, n.z).sub(camera.position); const t = v.dot(dir);
       if (t > 0 && v.addScaledVector(dir, -t).length() < 1.8 && (!best || t < best.t)) best = { n, t };
     }
     if (!best) { A.hit(); return; }
     const n = best.n; n.hp -= pk.dmg; A.hit(n.ty > 3);
-    if (n.hp <= 0) { p.bag[n.ty] = (p.bag[n.ty] || 0) + 1; toast('+1 ' + ORES[n.ty].n); A.coin(); n.g.visible = false; n.wait = rand(60, 120); store(); }
+    if (n.hp <= 0) {
+      p.bag[n.ty] = (p.bag[n.ty] || 0) + 1; toast('+1 ' + ORES[n.ty].n); A.coin(); n.g.visible = false; n.alive = false; store();
+      if (--left === 0) setTimeout(() => { toast('A mina foi reabastecida! Os minérios mudaram de lugar'); layout(); }, 2200);
+    }
   }
 
   // ----- armas na mão -----
+  const WC = { revolver: { max: 6, cd: .35, rl: 1.5, dmg: 1, range: 100, key: 'ammo' }, rifle: { max: 5, cd: .9, rl: 2.2, dmg: 2, range: 160, key: 'ammoR' } };
+  let rlW = 'revolver';
   const held = new THREE.Group(); held.position.set(.42, 1.2, .25); pm.add(held);
   const gun = new THREE.Group(); box(.1, .18, .5, '#2b2b2b', 0, 0, .25, gun); box(.08, .22, .1, '#5a3a1e', 0, -.18, .05, gun);
-  const fl = new THREE.Mesh(new THREE.SphereGeometry(.14, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffd060 })); fl.position.z = .6; fl.visible = false; gun.add(fl);
+  const rif = new THREE.Group(); box(.08, .12, 1.1, '#3a2a1a', 0, 0, .5, rif); box(.05, .05, .7, '#2b2b2b', 0, .04, 1.2, rif);
+  const fl = new THREE.Mesh(new THREE.SphereGeometry(.14, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffd060 })); fl.visible = false; held.add(fl);
   const pkG = new THREE.Group(); box(.06, 1.1, .06, '#6b4423', 0, .1, .1, pkG); box(.7, .12, .12, '#9a9a9a', 0, .65, .1, pkG);
-  held.add(gun, pkG);
+  held.add(gun, rif, pkG);
   const equip = w => {
-    if (w === 'pick' && !p.pick) { toast('Pegue a picareta na loja da mina'); return; }
+    if (w === 'pick' && !p.pick) { toast('Fale com o Zeca, na barraca da mina, para pegar a picareta'); return; }
+    if (w === 'rifle' && !p.rifle) { toast('Compre o rifle na armaria da cidade'); return; }
     p.weapon = w; A.click();
   };
-  function reload() { if (p.weapon === 'revolver' && rl <= 0 && p.ammo < 6) { rl = 1.5; A.reload(); } }
+  function reload() { const k = WC[p.weapon]; if (k && rl <= 0 && p[k.key] < k.max) { rl = k.rl; rlW = p.weapon; A.reload(); } }
   function fire() {
+    const w = p.weapon, k = WC[w];
     if (rl > 0 || cd > 0) return;
-    if (p.ammo <= 0) { A.click(); reload(); return; }
-    p.ammo--; cd = .35; flash = .06; A.shot(); fireRay();
+    if (p[k.key] <= 0) { A.click(); reload(); return; }
+    p[k.key]--; cd = k.cd; flash = .06; A.shot(w === 'rifle'); fireRay(k.dmg, k.range);
   }
 
   // ----- roda de armas -----
-  const wEl = [0, 1, 2].map(i => $('w' + i));
+  const wEl = [0, 1, 2, 3].map(i => $('w' + i));
   function paint() {
     wEl.forEach((el, i) => el.classList.toggle('on', i === sel));
     wEl[0].textContent = 'Guardar arma'; wEl[1].textContent = 'Revólver .38 (' + p.ammo + '/6)';
-    wEl[2].textContent = p.pick ? PICKS[p.pick].n : 'Picareta (na loja)';
+    wEl[2].textContent = p.rifle ? 'Rifle (' + p.ammoR + '/5)' : 'Rifle (armaria)'; wEl[3].textContent = p.pick ? PICKS[p.pick].n : 'Picareta (mina)';
   }
   X.key = e => {
     if (e.repeat) return; const k = e.code;
@@ -142,12 +158,13 @@ export function init(c) {
     if (k === 'KeyQ') { wheelOn = true; wx = wy = 0; sel = OPT.indexOf(p.weapon); $('roda').style.display = 'block'; paint(); X.timeScale = .2; }
     else if (k === 'KeyR') reload();
     else if (k === 'KeyE') {
-      if (Math.hypot(p.x - MINE.x, p.z - MINE.z) < 9) { show('shop'); document.exitPointerLock(); }
+      const n = NPCS.find(n => Math.hypot(p.x - n.x, p.z - n.z) < 4.5);
+      if (n) { shopT = n.type; show('shop'); document.exitPointerLock(); }
       else if (p.mounted) { p.mounted = false; p.x += 2; }
       else if (Math.hypot(p.x - H.x, p.z - H.z) < 5) { p.mounted = true; toast('Montado no cavalo'); }
     }
     else if (k === 'KeyM') { mapOn = !mapOn; $('mapa').style.display = mapOn ? 'flex' : 'none'; X.timeScale = mapOn ? 0 : 1; }
-    else if (k === 'Digit1') equip('none'); else if (k === 'Digit2') equip('revolver'); else if (k === 'Digit3') equip('pick');
+    else if (k.startsWith('Digit') && +k[5] >= 1 && +k[5] <= 4) equip(OPT[+k[5] - 1]);
   };
   X.keyup = e => {
     if (e.code === 'KeyQ' && wheelOn) { wheelOn = false; $('roda').style.display = 'none'; X.timeScale = mapOn ? 0 : 1; equip(OPT[sel]); }
@@ -155,10 +172,10 @@ export function init(c) {
   X.move = e => {
     if (!wheelOn) return mapOn;
     wx = clamp(wx + e.movementX, -90, 90); wy = clamp(wy + e.movementY, -90, 90);
-    if (Math.hypot(wx, wy) > 30) sel = Math.floor((((Math.atan2(wx, -wy) + Math.PI / 3) % TAU) + TAU) % TAU / (TAU / 3));
+    if (Math.hypot(wx, wy) > 30) sel = Math.floor((((Math.atan2(wx, -wy) + Math.PI / 4) % TAU) + TAU) % TAU / (TAU / 4));
     paint(); return true;
   };
-  X.click = () => { if (wheelOn || mapOn) return; if (p.weapon === 'revolver') fire(); else if (p.weapon === 'pick') mine(); };
+  X.click = () => { if (wheelOn || mapOn) return; if (WC[p.weapon]) fire(); else if (p.weapon === 'pick') mine(); };
 
   // ----- mapa -----
   const base = document.createElement('canvas'); base.width = base.height = 200;
@@ -179,7 +196,10 @@ export function init(c) {
       g.fillStyle = col; g.beginPath(); g.arc(px, pz, r, 0, TAU); g.fill();
       if (label) { g.fillStyle = '#1e120c'; g.font = 'bold 14px Georgia'; g.fillText(label, px + r + 3, pz + 5); }
     };
-    dot(0, 0, '#6b4423', full ? 7 : 4, full ? 'Cidade' : '');
+    g.strokeStyle = '#2a2a2a'; g.lineWidth = full ? 3 : 2; g.beginPath();
+    RAIL.forEach((r, i) => { const px = (r.x - ox) * k, pz = (r.z - oz) * k; if (i) g.lineTo(px, pz); else g.moveTo(px, pz); });
+    g.closePath(); g.stroke();
+    TOWNS.forEach(t => dot(t.x, t.z, '#6b4423', full ? 7 : 4, full ? t.name : ''));
     dot(MINE.x, MINE.z, '#ff8a00', full ? 8 : 5, full ? 'Mina' : '', !full);
     dot(H.x, H.z, '#fff', 4, full ? 'Cavalo' : '');
     g.save(); g.translate((p.x - ox) * k, (p.z - oz) * k); g.rotate(p.face + Math.PI / 2);
@@ -189,20 +209,19 @@ export function init(c) {
   // ----- atualização -----
   X.update = dt => {
     cd -= dt; swing = Math.max(0, swing - dt); flash = Math.max(0, flash - dt);
-    if (rl > 0) { rl -= dt; if (rl <= 0) p.ammo = 6; }
-    gun.visible = p.weapon === 'revolver'; pkG.visible = p.weapon === 'pick'; held.visible = p.weapon !== 'none';
-    fl.visible = flash > 0; pkG.rotation.x = swing > 0 ? -1.2 + (1 - swing / .3) * 2.2 : -.3;
-    nodes.forEach(n => { if (n.wait > 0 && (n.wait -= dt) <= 0) { n.hp = ORES[n.ty].hp; n.g.visible = true; } });
+    if (rl > 0) { rl -= dt; if (rl <= 0) p[WC[rlW].key] = WC[rlW].max; }
+    gun.visible = p.weapon === 'revolver'; rif.visible = p.weapon === 'rifle'; pkG.visible = p.weapon === 'pick'; held.visible = p.weapon !== 'none';
+    fl.visible = flash > 0; fl.position.z = p.weapon === 'rifle' ? 1.6 : .6; pkG.rotation.x = swing > 0 ? -1.2 + (1 - swing / .3) * 2.2 : -.3;
     if (p.mounted && dt > 0 && (gal -= dt) <= 0) { gal = .25; if (p.moving) A.thud(); }
     drawMap($('mm'), false); if (mapOn) drawMap($('mapc'), true);
   };
   X.hud = () => {
-    const w = p.weapon, hr = (c.getTod() * 24 + 6) % 24, n = bagN();
+    const w = p.weapon, hr = (c.getTod() * 24 + 6) % 24, n = bagN(), k = WC[w], np = NPCS.find(n => Math.hypot(p.x - n.x, p.z - n.z) < 4.5);
     $('din').textContent = '$ ' + p.money;
-    $('bala').textContent = w === 'revolver' ? (rl > 0 ? 'Recarregando...' : 'Revólver .38  ' + p.ammo + '/6' + (p.ammo ? '' : ' (aperte R)')) : w === 'pick' ? PICKS[p.pick].n : 'Armas guardadas (segure Q)';
+    $('bala').textContent = k ? (rl > 0 ? 'Recarregando...' : (w === 'rifle' ? 'Rifle ' : 'Revólver .38  ') + p[k.key] + '/' + k.max + (p[k.key] ? '' : ' (aperte R)')) : w === 'pick' ? PICKS[p.pick].n : 'Armas guardadas (segure Q)';
     $('hora').textContent = String(Math.floor(hr)).padStart(2, '0') + ':' + String(Math.floor((hr % 1) * 60)).padStart(2, '0');
     $('caca').innerHTML = 'Búfalos: ' + p.score.buffalo + '<br>Jacarés: ' + p.score.gator + '<br>Coiotes: ' + p.score.coyote + (n ? '<br>Mochila: ' + n + ' minérios ($' + bagVal() + ')' : '');
-    $('dica').textContent = Math.hypot(p.x - MINE.x, p.z - MINE.z) < 9 ? 'E: loja da mina' : p.mounted ? 'E: descer do cavalo'
+    $('dica').textContent = np ? 'E: falar com ' + SH[np.type].nome.split(',')[0] : p.mounted ? 'E: descer do cavalo'
       : Math.hypot(p.x - H.x, p.z - H.z) < 5 ? 'E: montar no cavalo' : '';
   };
   show('start');

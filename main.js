@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { init as initExtras } from './extras.js';
+import { build as buildWorld } from './mundo.js';
 
 const $ = id => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -9,13 +10,23 @@ const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t
 // ---------- mundo ----------
 const LAKES = [{ x: 80, z: -60, r: 22 }, { x: -90, z: 70, r: 25 }, { x: -60, z: -110, r: 20 }];
 const WATER = -0.8, LIM = 185;
-const MINE = { x: 110, z: -110 };
+const MINE = { x: 120, z: -125 };
+const TOWNS = [
+  { name: 'Poeira Seca', x: 0, z: 0, r: 32 }, { name: 'Vila Ferradura', x: 130, z: 100, r: 32 },
+  { name: 'Forte Cinzento', x: -125, z: 120, r: 32 }, { name: 'Pântano Negro', x: -140, z: -135, r: 32, swamp: true }];
+const RAIL = [{ x: 0, z: 50 }, { x: 130, z: 100 }, { x: -125, z: 165 }, { x: -180, z: 130 }, { x: -140, z: -100 }];
+const SW = TOWNS[3];
+const near = (x, z, d) => TOWNS.some(t => Math.hypot(x - t.x, z - t.z) < d + 10) || Math.hypot(x - MINE.x, z - MINE.z) < d + 10;
 
 function height(x, z) {
   let b = (Math.sin(x * 0.03) * Math.cos(z * 0.025) * 4 + Math.sin(x * 0.011 + z * 0.017) * 6 +
            Math.cos(z * 0.05) * Math.sin(x * 0.04) * 1.5) * 0.5 + 3;
-  b = Math.max(b, 0.5) * smooth(35, 70, Math.hypot(x, z));
-  { const f = smooth(40, 18, Math.hypot(x - MINE.x, z - MINE.z)); b = b * (1 - f) + f; }
+  let fl = 1;
+  for (const t of TOWNS) fl = Math.min(fl, smooth(t.r, t.r * 2, Math.hypot(x - t.x, z - t.z)));
+  b = Math.max(b, 0.5) * fl;
+  { const f = smooth(52, 34, Math.hypot(x - MINE.x, z - MINE.z)); b = b * (1 - f) + f; }
+  { const d = Math.hypot(x - SW.x, z - SW.z), f = smooth(64, 34, d), g = smooth(32, 20, d);
+    b = b * (1 - f) + (-0.5 + Math.sin(x * 0.21) * Math.cos(z * 0.19) * 0.9) * f; b = b * (1 - g) + 0.2 * g; }
   for (const l of LAKES) {
     const f = smooth(l.r * 1.3, l.r * 0.6, Math.hypot(x - l.x, z - l.z));
     b = b * (1 - f) - 2.5 * f;
@@ -61,6 +72,8 @@ function legs(p, pts, hip, len, w, c) {
     pos.setY(i, y);
     if (y < WATER + 0.4) c.set('#7a6a48'); else if (y < WATER + 1.5) c.set('#7d8a45');
     else if (y < 2.2) c.set('#c9a66b'); else if (y < 4) c.set('#b8864b'); else c.set('#9a6a3c');
+    if (Math.hypot(x - SW.x, z - SW.z) < 60 && y >= WATER + 0.4) c.set('#5f6b3a');
+    if (Math.hypot(x - MINE.x, z - MINE.z) < 34) c.set('#6a655e');
     c.offsetHSL(0, 0, Math.sin(x * 0.7) * Math.cos(z * 0.9) * 0.04);
     cols.push(c.r, c.g, c.b);
   }
@@ -72,26 +85,14 @@ function legs(p, pts, hip, len, w, c) {
   water.rotation.x = -Math.PI / 2; water.position.y = WATER; scene.add(water);
 }
 
-// cidade
-const rects = [];
-function building(x, z, w, d, h, col) {
-  const g = new THREE.Group();
-  box(w, h, d, col, 0, h / 2, 0, g);
-  box(w + 1, 0.6, d + 1, '#4a2c1a', 0, h + 0.3, 0, g);
-  box(1.6, 2.4, 0.2, '#3a2416', 0, 1.2, d / 2 + 0.05, g);
-  g.position.set(x, 0, z); scene.add(g);
-  rects.push({ x, z, w: w + 1, d: d + 1 });
-}
-building(0, -14, 14, 9, 6, '#8a5a33');
-building(-16, -13, 8, 8, 4.5, '#a06a3c'); building(16, -13, 9, 8, 5, '#7a4b2a');
-building(-22, 13, 8, 7, 4, '#7a4b2a'); building(-8, 13, 7, 7, 4.5, '#a06a3c');
-building(8, 13, 8, 7, 4, '#8a5a33'); building(22, 13, 7, 7, 4.2, '#a06a3c');
+// cidades, mina e ferrovia (mundo.js)
+const rects = [], NPCS = [];
 const blocked = (x, z) => rects.some(r => Math.abs(x - r.x) < r.w / 2 + 0.7 && Math.abs(z - r.z) < r.d / 2 + 0.7);
 
 function place(fn, n, minD) {
   for (let k = 0, tries = 0; k < n && tries < n * 20; tries++) {
     const x = rand(-LIM, LIM), z = rand(-LIM, LIM), y = height(x, z);
-    if (y < WATER + 0.8 || Math.hypot(x, z) < minD) continue;
+    if (y < WATER + 0.8 || near(x, z, minD)) continue;
     fn(x, y, z); k++;
   }
 }
@@ -190,11 +191,16 @@ function populate() {
     const a = rand(0, 6.28), d = rand(0, l.r * 0.8);
     spawn('gator', l.x + Math.cos(a) * d, l.z + Math.sin(a) * d, { x: l.x, z: l.z }, l.r * 1.3);
   }
+  for (let k = 0; k < 4; k++) {
+    const a = rand(0, 6.28), d = rand(24, 40);
+    spawn('gator', SW.x + Math.cos(a) * d, SW.z + Math.sin(a) * d, { x: SW.x, z: SW.z }, 42);
+  }
 }
 populate();
+const W = buildWorld({ THREE, scene, box, M, height, rects, NPCS, TOWNS, RAIL, MINE, WATER, hemi, sun, toast });
 
 // ---------- estado ----------
-Object.assign(player, { money: 0, bag: {}, weapon: 'none', pick: 0, moving: false });
+Object.assign(player, { money: 0, bag: {}, weapon: 'none', pick: 0, moving: false, rifle: false, ammoR: 5 });
 let tod = 0.18, sunY = 1, night = false;
 let kick = 0, hurtFlash = 0, toastT = 0;
 const keys = {};
@@ -210,11 +216,11 @@ function hurt(n) {
   if (player.hp <= 0) X.die();
 }
 function respawn() {
-  Object.assign(player, { x: 0, z: 3, hp: 100, ammo: 6, reload: 0, mounted: false });
+  Object.assign(player, { x: 0, z: 3, hp: 100, ammo: 6, ammoR: 5, reload: 0, mounted: false });
   H.x = 12; H.z = 2; populate();
 }
 const PAY = { buffalo: 40, gator: 90, coyote: 15 };
-function fireRay() {
+function fireRay(dmg = 1, range = 100) {
   kick = 0.05;
   camera.getWorldDirection(dir);
   let best = null;
@@ -222,18 +228,18 @@ function fireRay() {
     if (a.dead) continue;
     tmp.set(a.x, a.y + 0.9, a.z).sub(camera.position);
     const t = tmp.dot(dir);
-    if (t < 1 || t > 100) continue;
+    if (t < 1 || t > range) continue;
     if (tmp.addScaledVector(dir, -t).length() < a.cfg.r && (!best || t < best.t)) best = { a, t };
   }
   if (!best) return;
-  const a = best.a; a.hp--;
+  const a = best.a; a.hp -= dmg;
   if (a.hp <= 0) { a.dead = 0.001; player.score[a.type]++; player.money += PAY[a.type]; toast('Abateu um ' + a.cfg.name + ' +$' + PAY[a.type]); }
   else { a.scared = 6; toast('Acertou!'); }
 }
 
 // ---------- entrada ----------
 const X = initExtras({ THREE, scene, camera, renderer, player, pm, H, height, box, M, rects, toast, MINE, WATER,
-                       fireRay, respawn, getTod: () => tod });
+                       fireRay, respawn, NPCS, TOWNS, RAIL, W, getTod: () => tod });
 addEventListener('keydown', e => { keys[e.code] = true; X.key(e); });
 addEventListener('keyup', e => { keys[e.code] = false; X.keyup(e); });
 addEventListener('mousemove', e => {
@@ -334,9 +340,12 @@ function update(dt) {
   animals.forEach(a => updateAnimal(a, dt));
   animals = animals.filter(a => !a.gone);
 
-  const d = p.mounted ? 9 : 6.5, cp = Math.cos(p.pitch), top = p.mounted ? 2.6 : 1.8;
-  const cx = p.x + Math.sin(p.yaw) * cp * d, cz = p.z + Math.cos(p.yaw) * cp * d;
-  const cy = Math.max(p.y + top + Math.sin(p.pitch) * d, height(cx, cz) + 0.6);
+  W.update(p);
+  const ins = W.inside, d = ins ? 2.8 : p.mounted ? 9 : 6.5, cp = Math.cos(p.pitch), top = p.mounted ? 2.6 : 1.8;
+  let cx = p.x + Math.sin(p.yaw) * cp * d, cz = p.z + Math.cos(p.yaw) * cp * d;
+  if (ins) { cx = clamp(cx, ins.x0, ins.x1); cz = clamp(cz, ins.z0, ins.z1); }
+  let cy = Math.max(p.y + top + Math.sin(p.pitch) * d, height(cx, cz) + 0.6);
+  if (ins) cy = Math.min(cy, p.y + 3.8);
   kick = Math.max(0, kick - dt * 0.4);
   camera.position.set(cx, cy + kick * 8, cz);
   camera.lookAt(p.x, p.y + (p.mounted ? 2.4 : 1.7), p.z);

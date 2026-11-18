@@ -4,6 +4,9 @@ export const vol = { master: .8, music: .5, sfx: .8 };
 export function setVol() { if (ac) { out.gain.value = vol.master; mus.gain.value = vol.music * .5; sfx.gain.value = vol.sfx; } }
 export function init() {
   if (ac) { ac.resume(); return; }
+  try { start(); } catch (e) { ac = null; }
+}
+function start() {
   ac = new (window.AudioContext || window.webkitAudioContext)();
   out = ac.createGain(); out.connect(ac.destination);
   mus = ac.createGain(); mus.connect(out); sfx = ac.createGain(); sfx.connect(out);
@@ -27,7 +30,7 @@ function tone(t, f0, f1, dur, g, type = 'sine') {
   o.connect(gn); gn.connect(sfx); o.start(t); o.stop(t + dur);
 }
 const now = () => ac.currentTime;
-export const shot = () => { if (!ac) return; const t = now(); noise(t, .4, 'lowpass', 2600, 1, true); tone(t, 180, 35, .25, 1); noise(t, .05, 'highpass', 3000, .6); };
+export const shot = big => { if (!ac) return; const t = now(); noise(t, big ? .6 : .4, 'lowpass', big ? 1800 : 2600, 1, true); tone(t, big ? 130 : 180, 30, big ? .4 : .25, 1); noise(t, .05, 'highpass', 3000, .6); };
 const cl = (t, f) => noise(t, .03, 'highpass', f, .5);
 export const click = () => ac && cl(now(), 4000);
 // recarregar: abre o tambor, gira o tambor do .38 e fecha
